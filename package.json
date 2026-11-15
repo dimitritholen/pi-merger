@@ -15,7 +15,7 @@
   },
   "pi": {
     "extensions": ["./index.ts"],
-    "image": "https://github.com/dimitritholen/pi-merger/raw/refs/heads/main/docs/screenshot.png"
+    "image": "https://raw.githubusercontent.com/dimitritholen/pi-merger/main/docs/screenshot.png"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
