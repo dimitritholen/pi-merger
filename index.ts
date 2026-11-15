@@ -9,12 +9,12 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import { buildPrompt, type FileDiff, parseDiff } from "./diff.ts";
-import { approvePR, currentUser, type Exec, GhError, listPRs, type PR, prDiff } from "./gh.ts";
+import { approvePR, currentUser, type Exec, GhError, listPRs, type MergeMethod, mergePR, type PR, prDiff } from "./gh.ts";
 
 type Theme = Parameters<Parameters<ExtensionCommandContext["ui"]["custom"]>[0]>[1];
 type Result = { prompt: string } | undefined;
 type Screen = "list" | "files" | "diff";
-type Modal = "none" | "comment" | "confirm";
+type Modal = "none" | "comment" | "confirm" | "merge";
 
 const clean = (s: string) => s.replace(/\t/g, "    ").replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
 
@@ -97,6 +97,23 @@ class MergerView implements Component, Focusable {
 		} else this.modal = "confirm";
 	}
 
+	private askMerge() {
+		if (this.pr?.isDraft) this.status = { text: `#${this.pr.number} is a draft: mark it ready before merging.`, kind: "error" };
+		else this.modal = "merge";
+	}
+
+	private async merge(method: MergeMethod) {
+		const pr = this.prs[this.prIdx];
+		const out = await this.guard(`Merging #${pr.number} (${method})…`, () => mergePR(this.exec, pr.number, method));
+		if (out === undefined) return;
+		// merged PR is no longer open: drop it and go back to the list
+		this.prs.splice(this.prIdx, 1);
+		this.prIdx = Math.min(this.prIdx, Math.max(0, this.prs.length - 1));
+		this.files = [];
+		this.screen = "list";
+		this.status = { text: `Merged #${pr.number} (${method}).`, kind: "success" };
+	}
+
 	private async approve() {
 		const pr = this.prs[this.prIdx];
 		const out = await this.guard(`Approving #${pr.number}…`, () => approvePR(this.exec, pr.number));
@@ -122,6 +139,7 @@ class MergerView implements Component, Focusable {
 	handleInput(data: string): void {
 		if (this.modal === "comment") return this.commentInput(data);
 		if (this.modal === "confirm") return this.confirmInput(data);
+		if (this.modal === "merge") return this.mergeInput(data);
 		if (this.loading) {
 			if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
 				this.gen++; // abandon the in-flight request
@@ -148,6 +166,7 @@ class MergerView implements Component, Focusable {
 			else if (down) this.fileIdx = Math.min(this.files.length - 1, this.fileIdx + 1);
 			else if (enter) this.enterFile(this.fileIdx);
 			else if (matchesKey(data, "a")) this.askApprove();
+			else if (matchesKey(data, "m")) this.askMerge();
 			else if (back) this.screen = "list";
 		} else {
 			const n = this.file?.hunks.length ?? 0;
@@ -164,6 +183,7 @@ class MergerView implements Component, Focusable {
 					this.status = { text: "", kind: "info" };
 				} else this.status = { text: "No hunk to comment on in this file.", kind: "error" };
 			} else if (matchesKey(data, "a")) this.askApprove();
+			else if (matchesKey(data, "m")) this.askMerge();
 			else if (back) this.screen = "files";
 		}
 		this.tui.requestRender();
@@ -188,6 +208,18 @@ class MergerView implements Component, Focusable {
 				});
 			}
 		} else this.input.handleInput(data);
+		this.tui.requestRender();
+	}
+
+	private mergeInput(data: string) {
+		const method: MergeMethod | undefined = matchesKey(data, "s") ? "squash" : matchesKey(data, "m") ? "merge" : matchesKey(data, "r") ? "rebase" : undefined;
+		if (method) {
+			this.modal = "none";
+			void this.merge(method);
+		} else if (matchesKey(data, "escape") || matchesKey(data, "n")) {
+			this.modal = "none";
+			this.status = { text: "Merge cancelled.", kind: "info" };
+		}
 		this.tui.requestRender();
 	}
 
@@ -228,6 +260,9 @@ class MergerView implements Component, Focusable {
 		} else if (this.modal === "confirm" && this.pr) {
 			footer.push(fit(t.fg("warning", ` Approve #${this.pr.number} "${this.pr.title}" on GitHub?`)));
 			footer.push(fit(t.fg("dim", " y/enter confirm (runs gh pr review --approve) · n/esc cancel")));
+		} else if (this.modal === "merge" && this.pr) {
+			footer.push(fit(t.fg("warning", ` Merge #${this.pr.number} "${this.pr.title}" into ${this.pr.baseRefName}? This cannot be undone from here.`)));
+			footer.push(fit(t.fg("dim", " s squash · m merge commit · r rebase · esc/n cancel (runs gh pr merge)")));
 		} else {
 			const s = this.loading
 				? t.fg("accent", ` ⏳ ${this.loading}`)
@@ -248,8 +283,8 @@ class MergerView implements Component, Focusable {
 	private keyHelp(): string {
 		if (this.loading) return "esc cancel request · ctrl+c cancel";
 		if (this.screen === "list") return "↑/↓ j/k move · enter open · r refresh · q/esc quit";
-		if (this.screen === "files") return "↑/↓ j/k move · enter view diff · a approve PR · esc back · q quit";
-		return "↑↓ hunk · pgup/dn scroll · n/p file · c comment · a approve · esc back · q quit";
+		if (this.screen === "files") return "↑↓ move · enter diff · a approve · m merge · esc back · q quit";
+		return "↑↓ hunk · pgup/dn · n/p file · c comment · a approve · m merge · esc back · q quit";
 	}
 
 	private row(text: string, selected: boolean, width: number): string {

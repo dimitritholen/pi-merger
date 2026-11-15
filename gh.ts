@@ -54,3 +54,9 @@ export async function currentUser(exec: Exec): Promise<string | undefined> {
 		return undefined;
 	}
 }
+
+export type MergeMethod = "squash" | "merge" | "rebase";
+
+// An explicit method flag is required: without one `gh pr merge` prompts interactively and would hang.
+export const mergePR = (exec: Exec, n: number, method: MergeMethod) =>
+	run(exec, ["pr", "merge", String(n), `--${method}`]);
