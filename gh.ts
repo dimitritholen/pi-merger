@@ -60,3 +60,6 @@ export type MergeMethod = "squash" | "merge" | "rebase";
 // An explicit method flag is required: without one `gh pr merge` prompts interactively and would hang.
 export const mergePR = (exec: Exec, n: number, method: MergeMethod) =>
 	run(exec, ["pr", "merge", String(n), `--${method}`]);
+
+// Merges the base branch into the PR branch on GitHub (pushes a commit to the PR branch).
+export const updateBranch = (exec: Exec, n: number) => run(exec, ["pr", "update-branch", String(n)]);

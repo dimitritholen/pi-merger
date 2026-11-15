@@ -9,12 +9,12 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import { buildPrompt, type FileDiff, parseDiff } from "./diff.ts";
-import { approvePR, currentUser, type Exec, GhError, listPRs, type MergeMethod, mergePR, type PR, prDiff } from "./gh.ts";
+import { approvePR, currentUser, type Exec, GhError, listPRs, type MergeMethod, mergePR, type PR, prDiff, updateBranch } from "./gh.ts";
 
 type Theme = Parameters<Parameters<ExtensionCommandContext["ui"]["custom"]>[0]>[1];
 type Result = { prompt: string } | undefined;
 type Screen = "list" | "files" | "diff";
-type Modal = "none" | "comment" | "confirm" | "merge";
+type Modal = "none" | "comment" | "confirm" | "merge" | "update";
 
 const clean = (s: string) => s.replace(/\t/g, "    ").replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
 
@@ -152,6 +152,7 @@ class MergerView implements Component, Focusable {
 		if (this.modal === "comment") return this.commentInput(data);
 		if (this.modal === "confirm") return this.confirmInput(data);
 		if (this.modal === "merge") return this.mergeInput(data);
+		if (this.modal === "update") return this.updateInput(data);
 		if (this.loading) {
 			if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
 				this.gen++; // abandon the in-flight request
@@ -181,6 +182,7 @@ class MergerView implements Component, Focusable {
 			else if (enter) this.enterFile(this.fileIdx);
 			else if (matchesKey(data, "a")) this.askApprove();
 			else if (matchesKey(data, "m")) this.askMerge();
+			else if (matchesKey(data, "u")) this.modal = "update";
 			else if (back) this.screen = "list";
 		} else {
 			const n = this.file?.hunks.length ?? 0;
@@ -198,6 +200,7 @@ class MergerView implements Component, Focusable {
 				} else this.status = { text: "No hunk to comment on in this file.", kind: "error" };
 			} else if (matchesKey(data, "a")) this.askApprove();
 			else if (matchesKey(data, "m")) this.askMerge();
+			else if (matchesKey(data, "u")) this.modal = "update";
 			else if (back) this.screen = "files";
 		}
 		this.tui.requestRender();
@@ -223,6 +226,23 @@ class MergerView implements Component, Focusable {
 			}
 		} else this.input.handleInput(data);
 		this.tui.requestRender();
+	}
+
+	private updateInput(data: string) {
+		if (matchesKey(data, "y") || matchesKey(data, "enter")) {
+			this.modal = "none";
+			void this.update();
+		} else if (matchesKey(data, "n") || matchesKey(data, "escape")) {
+			this.modal = "none";
+			this.status = { text: "Update cancelled.", kind: "info" };
+		}
+		this.tui.requestRender();
+	}
+
+	private async update() {
+		const pr = this.prs[this.prIdx];
+		const out = await this.guard(`Updating branch of #${pr.number}…`, () => updateBranch(this.exec, pr.number));
+		if (out !== undefined) this.status = { text: `Merged ${pr.baseRefName} into ${pr.headRefName}. Try merging again.`, kind: "success" };
 	}
 
 	private mergeInput(data: string) {
@@ -274,6 +294,9 @@ class MergerView implements Component, Focusable {
 		} else if (this.modal === "confirm" && this.pr) {
 			footer.push(fit(t.fg("warning", ` Approve #${this.pr.number} "${this.pr.title}" on GitHub?`)));
 			footer.push(fit(t.fg("dim", " y/enter confirm (runs gh pr review --approve) · n/esc cancel")));
+		} else if (this.modal === "update" && this.pr) {
+			footer.push(fit(t.fg("warning", ` Merge ${this.pr.baseRefName} into ${this.pr.headRefName} on GitHub (pushes a commit to the PR branch)?`)));
+			footer.push(fit(t.fg("dim", " y/enter confirm (runs gh pr update-branch) · n/esc cancel")));
 		} else if (this.modal === "merge" && this.pr) {
 			footer.push(fit(t.fg("warning", ` Merge #${this.pr.number} "${this.pr.title}" into ${this.pr.baseRefName}? This cannot be undone from here.`)));
 			footer.push(fit(t.fg("dim", " s squash · m merge commit · r rebase · esc/n cancel (runs gh pr merge)")));
@@ -297,8 +320,8 @@ class MergerView implements Component, Focusable {
 	private keyHelp(): string {
 		if (this.loading) return "esc cancel request · ctrl+c cancel";
 		if (this.screen === "list") return "↑/↓ j/k move · enter open · r refresh · q/esc quit";
-		if (this.screen === "files") return "↑↓ file · enter/→ select hunks · pgup/dn scroll · a approve · m merge · esc back · q quit";
-		return "↑↓ hunk · pgup/dn · n/p file · c comment · a approve · m merge · esc back · q quit";
+		if (this.screen === "files") return "↑↓ file · enter/→ select hunks · pgup/dn scroll · a approve · m merge · u update · esc back · q quit";
+		return "↑↓ hunk · pgup/dn · n/p file · c comment · a approve · m merge · u update · esc back · q quit";
 	}
 
 	private row(text: string, selected: boolean, width: number): string {
