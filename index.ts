@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
 	type Component,
 	type Focusable,
@@ -11,7 +11,6 @@ import {
 import { buildPrompt, type FileDiff, parseDiff } from "./diff.ts";
 import { approvePR, currentUser, type Exec, GhError, listPRs, type MergeMethod, mergePR, type PR, prDiff, updateBranch } from "./gh.ts";
 
-type Theme = Parameters<Parameters<ExtensionCommandContext["ui"]["custom"]>[0]>[1];
 type Result = { prompt: string } | undefined;
 type Screen = "list" | "files" | "diff";
 type Modal = "none" | "comment" | "confirm" | "merge" | "update";
@@ -32,6 +31,7 @@ class MergerView implements Component, Focusable {
 	private hunkIdx = 0;
 	private scroll = 0; // diff body scroll offset
 	private loading = "";
+	private cancellable = true; // false while a request that changes GitHub is in flight
 	private status: { text: string; kind: "error" | "success" | "info" } = { text: "", kind: "info" };
 	private gen = 0; // invalidates stale async results
 	private input = new Input({ prompt: "comment> " });
@@ -47,9 +47,10 @@ class MergerView implements Component, Focusable {
 	}
 
 	// ---------- data ----------
-	private async guard<T>(label: string, fn: () => Promise<T>): Promise<T | undefined> {
+	private async guard<T>(label: string, fn: () => Promise<T>, mutates = false): Promise<T | undefined> {
 		const g = ++this.gen;
 		this.loading = label;
+		this.cancellable = !mutates;
 		this.status = { text: "", kind: "info" };
 		this.tui.requestRender();
 		try {
@@ -70,7 +71,7 @@ class MergerView implements Component, Focusable {
 			return { prs, me: await currentUser(this.exec) };
 		});
 		if (!res) return;
-		const { prs } = res;
+		const prs = res.prs.map((p) => ({ ...p, title: clean(p.title) })); // PR text is untrusted: no terminal escapes
 		this.me = res.me;
 		this.prs = prs;
 		this.prIdx = Math.min(this.prIdx, Math.max(0, prs.length - 1));
@@ -108,7 +109,7 @@ class MergerView implements Component, Focusable {
 
 	private async merge(method: MergeMethod) {
 		const pr = this.prs[this.prIdx];
-		const out = await this.guard(`Merging #${pr.number} (${method})…`, () => mergePR(this.exec, pr.number, method));
+		const out = await this.guard(`Merging #${pr.number} (${method})…`, () => mergePR(this.exec, pr.number, method), true);
 		if (out === undefined) return;
 		// merged PR is no longer open: drop it and go back to the list
 		this.prs.splice(this.prIdx, 1);
@@ -120,7 +121,7 @@ class MergerView implements Component, Focusable {
 
 	private async approve() {
 		const pr = this.prs[this.prIdx];
-		const out = await this.guard(`Approving #${pr.number}…`, () => approvePR(this.exec, pr.number));
+		const out = await this.guard(`Approving #${pr.number}…`, () => approvePR(this.exec, pr.number), true);
 		if (out !== undefined) this.status = { text: `Approved #${pr.number}.`, kind: "success" };
 	}
 
@@ -154,7 +155,8 @@ class MergerView implements Component, Focusable {
 		if (this.modal === "merge") return this.mergeInput(data);
 		if (this.modal === "update") return this.updateInput(data);
 		if (this.loading) {
-			if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+			// Esc only abandons reads. A merge/approve/update cannot be recalled once sent, so keep showing it.
+			if (this.cancellable && (matchesKey(data, "escape") || matchesKey(data, "ctrl+c"))) {
 				this.gen++; // abandon the in-flight request
 				this.loading = "";
 				this.tui.requestRender();
@@ -241,7 +243,7 @@ class MergerView implements Component, Focusable {
 
 	private async update() {
 		const pr = this.prs[this.prIdx];
-		const out = await this.guard(`Updating branch of #${pr.number}…`, () => updateBranch(this.exec, pr.number));
+		const out = await this.guard(`Updating branch of #${pr.number}…`, () => updateBranch(this.exec, pr.number), true);
 		if (out !== undefined) this.status = { text: `Merged ${pr.baseRefName} into ${pr.headRefName}. Try merging again.`, kind: "success" };
 	}
 
@@ -283,7 +285,7 @@ class MergerView implements Component, Focusable {
 
 		const crumbs = ["Open PRs"];
 		if (this.screen !== "list" && this.pr) crumbs.push(`#${this.pr.number} ${this.pr.title}`);
-		if (this.screen === "diff" && this.file) crumbs.push(this.file.path);
+		if (this.screen === "diff" && this.file) crumbs.push(clean(this.file.path));
 		const header = [fit(t.bold(t.fg("accent", " pi-merger ")) + t.fg("muted", crumbs.join("  ›  "))), fit(t.fg("borderMuted", "─".repeat(width)))];
 
 		// footer: status line + key bindings (+ modal prompt)
@@ -318,7 +320,7 @@ class MergerView implements Component, Focusable {
 	}
 
 	private keyHelp(): string {
-		if (this.loading) return "esc cancel request · ctrl+c cancel";
+		if (this.loading) return this.cancellable ? "esc cancel request" : "request sent to GitHub, waiting for the result…";
 		if (this.screen === "list") return "↑/↓ j/k move · enter open · r refresh · q/esc quit";
 		if (this.screen === "files") return "↑↓ file · enter/→ select hunks · pgup/dn scroll · a approve · m merge · u update · esc back · q quit";
 		return "↑↓ hunk · pgup/dn · n/p file · c comment · a approve · m merge · u update · esc back · q quit";

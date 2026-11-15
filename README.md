@@ -5,7 +5,8 @@ A [pi](https://github.com/earendil-works/pi) extension that opens a full-screen 
 ## Install
 
 ```sh
-pi install /path/to/pi-merger      # or: pi install git:github.com/dimitritholen/pi-merger
+pi install git:github.com/dimitritholen/pi-merger
+# or from a local clone: pi install /path/to/pi-merger
 ```
 
 Then `/reload` in pi. Requires [`gh`](https://cli.github.com), logged in (`gh auth login`).
@@ -38,4 +39,8 @@ First 100 open PRs only. No syntax highlighting. Single-line comments. The diff 
 
 ## Develop
 
-`npm test` runs the diff-parser tests (Node with `--experimental-strip-types`).
+`npm install`, then `npm test` (diff parser and `gh` error handling) and `npm run typecheck`.
+
+## License
+
+MIT
