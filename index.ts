@@ -18,6 +18,8 @@ type Modal = "none" | "comment" | "confirm" | "merge";
 
 const clean = (s: string) => s.replace(/\t/g, "    ").replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
 
+const SPLIT_MIN_WIDTH = 100;
+
 class MergerView implements Component, Focusable {
 	focused = false; // propagated to the comment Input (IME cursor placement)
 	private screen: Screen = "list";
@@ -82,6 +84,8 @@ class MergerView implements Component, Focusable {
 		if (text === undefined) return;
 		this.files = parseDiff(text);
 		this.fileIdx = 0;
+		this.hunkIdx = 0;
+		this.scroll = 0;
 		this.screen = "files";
 		if (!this.files.length) this.status = { text: "This PR has no changed files.", kind: "info" };
 	}
@@ -127,6 +131,14 @@ class MergerView implements Component, Focusable {
 	private get file(): FileDiff | undefined {
 		return this.files[this.fileIdx];
 	}
+	/** Files screen: change the selected file, the right pane previews it from the top. */
+	private selectFile(i: number) {
+		if (!this.files.length) return;
+		this.fileIdx = Math.max(0, Math.min(this.files.length - 1, i));
+		this.hunkIdx = 0;
+		this.scroll = 0;
+	}
+
 	private enterFile(i: number) {
 		if (!this.files.length) return;
 		this.fileIdx = (i + this.files.length) % this.files.length;
@@ -162,8 +174,10 @@ class MergerView implements Component, Focusable {
 			else if (matchesKey(data, "r")) void this.loadPRs();
 			else if (matchesKey(data, "escape")) return this.done(undefined);
 		} else if (this.screen === "files") {
-			if (up) this.fileIdx = Math.max(0, this.fileIdx - 1);
-			else if (down) this.fileIdx = Math.min(this.files.length - 1, this.fileIdx + 1);
+			if (up) this.selectFile(this.fileIdx - 1);
+			else if (down) this.selectFile(this.fileIdx + 1);
+			else if (matchesKey(data, "pageDown") || matchesKey(data, "space")) this.scroll += this.bodyRows - 1;
+			else if (matchesKey(data, "pageUp")) this.scroll = Math.max(0, this.scroll - (this.bodyRows - 1));
 			else if (enter) this.enterFile(this.fileIdx);
 			else if (matchesKey(data, "a")) this.askApprove();
 			else if (matchesKey(data, "m")) this.askMerge();
@@ -283,7 +297,7 @@ class MergerView implements Component, Focusable {
 	private keyHelp(): string {
 		if (this.loading) return "esc cancel request · ctrl+c cancel";
 		if (this.screen === "list") return "↑/↓ j/k move · enter open · r refresh · q/esc quit";
-		if (this.screen === "files") return "↑↓ move · enter diff · a approve · m merge · esc back · q quit";
+		if (this.screen === "files") return "↑↓ file · enter/→ select hunks · pgup/dn scroll · a approve · m merge · esc back · q quit";
 		return "↑↓ hunk · pgup/dn · n/p file · c comment · a approve · m merge · esc back · q quit";
 	}
 
@@ -305,17 +319,35 @@ class MergerView implements Component, Focusable {
 				return this.row(line, sel, width);
 			});
 		}
-		if (this.screen === "files") {
-			if (!this.files.length) return [];
-			const start = Math.max(0, Math.min(this.fileIdx - Math.floor(h / 2), this.files.length - h));
-			return this.files.slice(start, start + h).map((f, i) => {
-				const sel = start + i === this.fileIdx;
-				const stat = `${t.fg("success", `+${f.added}`)} ${t.fg("error", `-${f.removed}`)}`;
-				const note = f.note ? t.fg("muted", ` (${f.note})`) : "";
-				return this.row(`${sel ? "›" : " "} ${clean(f.path)}${note}  ${stat}`, sel, width);
-			});
+		if (!this.files.length) return [];
+		// Narrow terminal: no room for two panes. Files screen = list only, diff screen = diff only.
+		if (width < SPLIT_MIN_WIDTH) {
+			return this.screen === "files" ? this.renderFileList(width, h) : this.renderDiff(width, h);
 		}
-		return this.renderDiff(width, h);
+		const leftW = Math.min(44, Math.max(28, Math.floor(width * 0.3)));
+		const rightW = width - leftW - 1;
+		const left = this.renderFileList(leftW, h);
+		const right = this.renderDiff(rightW, h);
+		const sep = t.fg("borderMuted", "│");
+		const pad = (l: string, w: number) => l + " ".repeat(Math.max(0, w - visibleWidth(l)));
+		return Array.from({ length: h }, (_, i) => pad(left[i] ?? "", leftW) + sep + (right[i] ?? ""));
+	}
+
+	private renderFileList(width: number, h: number): string[] {
+		const t = this.theme;
+		const start = Math.max(0, Math.min(this.fileIdx - Math.floor(h / 2), this.files.length - h));
+		return this.files.slice(start, start + h).map((f, i) => {
+			const sel = start + i === this.fileIdx;
+			const statPlain = `+${f.added} -${f.removed}`;
+			const stat = `${t.fg("success", `+${f.added}`)} ${t.fg("error", `-${f.removed}`)}`;
+			// keep the end of the path (the file name) when it does not fit
+			const avail = Math.max(4, width - 2 - statPlain.length - 1);
+			let path = clean(f.path);
+			if (path.length > avail) path = "…" + path.slice(path.length - avail + 1);
+			const line = `${sel ? "›" : " "} ${path} ${stat}`;
+			// highlight bar only while the file list has focus; in the diff the › marker is enough
+			return this.row(line, sel && this.screen === "files", width);
+		});
 	}
 
 	private renderDiff(width: number, h: number): string[] {
@@ -331,7 +363,7 @@ class MergerView implements Component, Focusable {
 		if (!f.hunks.length) lines.push(t.fg("muted", `  ${f.note ?? "no textual changes"}`));
 		f.hunks.forEach((hk, hi) => {
 			hunkStart.push(lines.length);
-			const sel = hi === this.hunkIdx;
+			const sel = this.screen === "diff" && hi === this.hunkIdx;
 			const mark = sel ? t.fg("accent", "▌ ") : "  ";
 			lines.push(mark + t.bold(t.fg(sel ? "accent" : "mdHeading", truncateToWidth(clean(hk.header), w))));
 			for (const l of hk.lines) lines.push(mark + color(truncateToWidth(clean(l), w)));
