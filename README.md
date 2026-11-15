@@ -5,8 +5,8 @@ A [pi](https://github.com/earendil-works/pi) extension that opens a full-screen 
 ## Install
 
 ```sh
-pi install git:github.com/dimitritholen/pi-merger
-# or from a local clone: pi install /path/to/pi-merger
+pi install npm:@scriptdude/pi-merger
+# or straight from GitHub: pi install git:github.com/dimitritholen/pi-merger
 ```
 
 Then `/reload` in pi. Requires [`gh`](https://cli.github.com), logged in (`gh auth login`).

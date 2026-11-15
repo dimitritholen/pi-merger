@@ -1,10 +1,11 @@
 {
-  "name": "pi-merger",
+  "name": "@scriptdude/pi-merger",
   "version": "0.1.0",
   "type": "module",
   "description": "pi extension: review, approve, merge and comment on open GitHub PRs from a full-screen TUI (via gh)",
   "keywords": ["pi-package", "pi-extension", "github", "pull-request", "code-review"],
   "license": "MIT",
+  "publishConfig": { "access": "public" },
   "author": "Dimitri Tholen",
   "repository": { "type": "git", "url": "git+https://github.com/dimitritholen/pi-merger.git" },
   "files": ["index.ts", "gh.ts", "diff.ts", "README.md", "LICENSE"],
