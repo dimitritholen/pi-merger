@@ -9,7 +9,7 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import { buildPrompt, type FileDiff, parseDiff } from "./diff.ts";
-import { approvePR, type Exec, GhError, listPRs, type PR, prDiff } from "./gh.ts";
+import { approvePR, currentUser, type Exec, GhError, listPRs, type PR, prDiff } from "./gh.ts";
 
 type Theme = Parameters<Parameters<ExtensionCommandContext["ui"]["custom"]>[0]>[1];
 type Result = { prompt: string } | undefined;
@@ -23,6 +23,7 @@ class MergerView implements Component, Focusable {
 	private screen: Screen = "list";
 	private modal: Modal = "none";
 	private prs: PR[] = [];
+	private me: string | undefined;
 	private files: FileDiff[] = [];
 	private prIdx = 0;
 	private fileIdx = 0;
@@ -62,8 +63,13 @@ class MergerView implements Component, Focusable {
 	}
 
 	private async loadPRs() {
-		const prs = await this.guard("Loading open pull requests…", () => listPRs(this.exec));
-		if (!prs) return;
+		const res = await this.guard("Loading open pull requests…", async () => {
+			const prs = await listPRs(this.exec);
+			return { prs, me: await currentUser(this.exec) };
+		});
+		if (!res) return;
+		const { prs } = res;
+		this.me = res.me;
 		this.prs = prs;
 		this.prIdx = Math.min(this.prIdx, Math.max(0, prs.length - 1));
 		if (!prs.length) this.status = { text: "No open pull requests.", kind: "info" };
@@ -78,6 +84,17 @@ class MergerView implements Component, Focusable {
 		this.fileIdx = 0;
 		this.screen = "files";
 		if (!this.files.length) this.status = { text: "This PR has no changed files.", kind: "info" };
+	}
+
+	private isOwn(pr: PR | undefined): boolean {
+		return !!pr && !!this.me && pr.author?.login === this.me;
+	}
+
+	/** Open the confirm step, unless GitHub would reject it (own PR). */
+	private askApprove() {
+		if (this.isOwn(this.pr)) {
+			this.status = { text: `#${this.pr!.number} is your own PR: GitHub does not allow approving it.`, kind: "error" };
+		} else this.modal = "confirm";
 	}
 
 	private async approve() {
@@ -130,7 +147,7 @@ class MergerView implements Component, Focusable {
 			if (up) this.fileIdx = Math.max(0, this.fileIdx - 1);
 			else if (down) this.fileIdx = Math.min(this.files.length - 1, this.fileIdx + 1);
 			else if (enter) this.enterFile(this.fileIdx);
-			else if (matchesKey(data, "a")) this.modal = "confirm";
+			else if (matchesKey(data, "a")) this.askApprove();
 			else if (back) this.screen = "list";
 		} else {
 			const n = this.file?.hunks.length ?? 0;
@@ -146,7 +163,7 @@ class MergerView implements Component, Focusable {
 					this.modal = "comment";
 					this.status = { text: "", kind: "info" };
 				} else this.status = { text: "No hunk to comment on in this file.", kind: "error" };
-			} else if (matchesKey(data, "a")) this.modal = "confirm";
+			} else if (matchesKey(data, "a")) this.askApprove();
 			else if (back) this.screen = "files";
 		}
 		this.tui.requestRender();
@@ -248,7 +265,7 @@ class MergerView implements Component, Focusable {
 			const start = Math.max(0, Math.min(this.prIdx - Math.floor(h / 2), this.prs.length - h));
 			return this.prs.slice(start, start + h).map((p, i) => {
 				const sel = start + i === this.prIdx;
-				const draft = p.isDraft ? t.fg("warning", " [draft]") : "";
+				const draft = (p.isDraft ? t.fg("warning", " [draft]") : "") + (this.isOwn(p) ? t.fg("accent", " (yours)") : "");
 				const line = `${sel ? "›" : " "} ${t.fg("accent", `#${p.number}`)} ${clean(p.title)}${draft} ${t.fg("muted", `${p.author?.login ?? "?"} · ${p.headRefName} → ${p.baseRefName}`)}`;
 				return this.row(line, sel, width);
 			});

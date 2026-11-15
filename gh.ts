@@ -45,3 +45,12 @@ export async function listPRs(exec: Exec): Promise<PR[]> {
 export const prDiff = (exec: Exec, n: number) => run(exec, ["pr", "diff", String(n), "--color", "never"]);
 
 export const approvePR = (exec: Exec, n: number) => run(exec, ["pr", "review", String(n), "--approve"]);
+
+/** Login of the authenticated gh user, or undefined if it cannot be determined. */
+export async function currentUser(exec: Exec): Promise<string | undefined> {
+	try {
+		return (await run(exec, ["api", "user", "--jq", ".login"])).trim() || undefined;
+	} catch {
+		return undefined;
+	}
+}
