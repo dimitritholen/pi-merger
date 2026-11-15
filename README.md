@@ -2,6 +2,8 @@
 
 A [pi](https://github.com/earendil-works/pi) extension that opens a full-screen TUI to review open GitHub pull requests. All PR data comes from the `gh` CLI.
 
+![pi-merger: file list on the left, diff of the selected file on the right](docs/screenshot.png)
+
 ## Install
 
 ```sh
