@@ -1,0 +1,9 @@
+{
+  "name": "pi-merger",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "pi extension: review open GitHub PRs (via gh) in a full-screen TUI",
+  "keywords": ["pi-package"],
+  "scripts": { "test": "node --test --experimental-strip-types diff.test.ts" },
+  "pi": { "extensions": ["./index.ts"] }
+}
