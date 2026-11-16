@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.2.0] - 2025-11-16
 
 - Multi-repo: when pi starts in a folder with git repos in its subfolders, the start screen lists open PRs from all of them (repo name shown per PR). Press `f` for a dropdown to focus on one repo.
 - PRs show `owner/repo`. Press `v` to filter: All, Created by me, Assigned to me, Review requested from me.

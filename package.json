@@ -1,6 +1,6 @@
 {
   "name": "@scriptdude/pi-merger",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "description": "pi extension: review, approve, merge and comment on open GitHub PRs from a full-screen TUI (via gh)",
   "keywords": ["pi-package", "pi-extension", "github", "pull-request", "code-review"],
