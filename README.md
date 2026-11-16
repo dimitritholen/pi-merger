@@ -17,6 +17,8 @@ Then `/reload` in pi. Requires [`gh`](https://cli.github.com), logged in (`gh au
 
 Run pi inside a git repo with a GitHub remote, then press `ctrl+shift+m` or type `/merger`.
 
+Starting pi in a folder that holds several repos (direct subfolders with a `.git`) works too: the start screen lists open PRs from all of them, and `f` opens a dropdown to focus on one repo.
+
 Flow: PR list → changed files (file list left, diff preview right; stacked on terminals under 100 columns) → select hunks.
 
 | Key | Action |
@@ -29,6 +31,9 @@ Flow: PR list → changed files (file list left, diff preview right; stacked on 
 | `a` | approve (confirm first; `gh pr review --approve`). Blocked on your own PRs |
 | `m` | merge (confirm first; pick `s` squash, `m` merge commit, `r` rebase). Not for drafts |
 | `u` | update branch: merge base into the PR branch (confirm first; `gh pr update-branch`) |
+| `f` | choose repository (only when several repos were found) |
+| `v` | filter: All, Created by me, Assigned to me, Review requested from me |
+| `u` | choose users (PR authors): `space` shows/hides a user, `a` shows all (remembered until pi restarts) |
 | `r` | refresh the PR list |
 | `esc` | back |
 | `q` / `ctrl+c` | quit |
@@ -37,7 +42,7 @@ Errors from `gh` (missing, not authenticated, GitHub refusals such as conflicts)
 
 ## Limits
 
-First 100 open PRs only. No syntax highlighting. Single-line comments. The diff is re-fetched each time a PR is opened.
+First 100 open PRs per repo. Repos are only searched one level down. No syntax highlighting. Single-line comments. The diff is re-fetched each time a PR is opened.
 
 ## Develop
 

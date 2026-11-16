@@ -7,6 +7,15 @@ export interface PR {
 	headRefName: string;
 	baseRefName: string;
 	isDraft: boolean;
+	url?: string;
+	createdAt?: string;
+	assignees?: { login: string }[];
+	reviewRequests?: { login?: string }[]; // team requests have no login
+}
+
+/** "owner/repo" from a PR url like https://github.com/owner/repo/pull/7, if it has that shape. */
+export function repoSlug(url: string | undefined): string | undefined {
+	return url?.match(/^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/pull\/\d+/)?.[1];
 }
 
 export type Exec = (cmd: string, args: string[]) => Promise<{ stdout: string; stderr: string; code: number }>;
@@ -33,7 +42,7 @@ async function run(exec: Exec, args: string[]): Promise<string> {
 export async function listPRs(exec: Exec): Promise<PR[]> {
 	const out = await run(exec, [
 		"pr", "list", "--state", "open", "--limit", "100",
-		"--json", "number,title,author,headRefName,baseRefName,isDraft",
+		"--json", "number,title,author,headRefName,baseRefName,isDraft,url,createdAt,assignees,reviewRequests",
 	]);
 	try {
 		return JSON.parse(out) as PR[];

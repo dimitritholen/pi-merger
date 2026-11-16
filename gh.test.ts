@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { approvePR, listPRs, mergePR } from "./gh.ts";
+import { approvePR, listPRs, mergePR, repoSlug } from "./gh.ts";
 
 const fail = (stderr: string, code = 1) => async () => ({ stdout: "", stderr, code });
 
@@ -15,6 +15,12 @@ test("not authenticated", async () => {
 
 test("other failures keep gh's message", async () => {
 	await assert.rejects(approvePR(fail("Review Can not approve your own pull request"), 3), /own pull request/);
+});
+
+test("repoSlug", () => {
+	assert.equal(repoSlug("https://github.com/acme/api/pull/7"), "acme/api");
+	assert.equal(repoSlug(undefined), undefined);
+	assert.equal(repoSlug("nonsense"), undefined);
 });
 
 test("merge always passes an explicit method flag", async () => {

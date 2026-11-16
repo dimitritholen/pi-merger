@@ -51,9 +51,9 @@ export function hunkText(h: Hunk): string {
 }
 
 /** The prompt sent to the model for a selected hunk. */
-export function buildPrompt(opts: { pr: number; title: string; path: string; hunk: Hunk; comment: string }): string {
+export function buildPrompt(opts: { pr: number; repo?: string; title: string; path: string; hunk: Hunk; comment: string }): string {
 	return [
-		`Change suggestion for PR #${opts.pr} (${opts.title}).`,
+		`Change suggestion for PR #${opts.pr}${opts.repo ? ` in repository ${opts.repo}` : ""} (${opts.title}).`,
 		`File: ${opts.path}`,
 		"",
 		"Hunk:",
